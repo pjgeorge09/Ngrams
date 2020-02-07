@@ -5,7 +5,9 @@ Created on Thu Jan 30 14:44:32 2020
 @author: Peter
 @class : CMSC416 Natural Language Processing
 @assignment : 2
-@due date :
+@due date : 02/13/2020
+@code : 129/202 lines
+@MAIN METHOD : Starts on line 90
 
     Example run : ngram.py n m input-file/s
         --> n = N in N-gram = argv[1] so if N=2, then for words X Y Z, we consider X,Y the bigrams
@@ -14,9 +16,7 @@ Created on Thu Jan 30 14:44:32 2020
 """
 from sys import argv
 import re
-import pandas as pd
 import numpy as np
-import random
 
 ''' Method to get a list of all the documents. Returns list of docs.'''
 def getDocumentList():
@@ -43,16 +43,6 @@ def fixSomePeriods(document):
 def tokenize(phrase):
     return re.split('\s+', phrase)
 
-''' A method to parse each tokenized sentence and count unigrams'''
-def getUnigrams(aTokenizedSentence):
-    global unigrams
-    for aToken in aTokenizedSentence:
-        if aToken not in unigrams.keys():
-            unigrams[aToken] = 1
-        else:
-            unigrams[aToken] += 1
-    return
-
 ''' A method to convert the integer count values of ngrams to percents of their wholes'''
 def convert(n, nMinus):
     for prewords in n:
@@ -60,15 +50,48 @@ def convert(n, nMinus):
         for thing2 in n[prewords]:
             n[prewords][thing2] = (n[prewords][thing2] / total) 
     return n
-    
+ 
+''' A method to get the current N-1 gram to analyze for next word addition'''
+def N_Tokens(string,N):
+    N = N-1 # I have no idea why this is going up by one, but decrement.
+    tokens = tokenize(string)
+    # Get the values from position (end - N) to the end. So for 8 words, N=3, it's only 7 and 8 (starting from 1)
+    tokens = tokens[len(tokens)-N:len(tokens)] 
+    # Turn them back into a string. Maybe make this a method
+    toReturn = ""
+    for _ in tokens:
+        toReturn = toReturn + str(_) + " "
+    return toReturn[:-1]
 
+''' A method simply to parse the output strings, clean them up for readability. '''
+def formatted(string):
+    string = re.sub('(\s*<)|(>\s*)', '', string)
+    string = re.sub(' \?', '?', string)
+    string = re.sub(' !', '!', string)
+    string = re.sub(' \.', '.', string)
+    string = re.sub(' ,' , ',', string)
+    string = re.sub('\b(hes)\b', 'he\'s', string)
+    string = re.sub('\b(hers)\b', 'her\'s', string)
+    string = re.sub('\b(cant)\b', 'can\'t', string)
+    string = re.sub('\b(dont)\b', 'don\'t', string)
+    string = re.sub('\b(theyre)\b', 'they\'re', string)
+    string = re.sub('\b(youre)\b', 'you\'re', string)
+    string = re.sub('\b(isnt)\b', 'isn\'t', string)
+    string = re.sub('\b(havent)\b', 'haven\'t', string)
+    string = re.sub('\bi\b', ' I ', string) # Why does nothing I do get this to work
+    string = re.sub('\b(weve)\b', 'we\'ve', string)
+    return string.capitalize()
+
+'''-------------------------------------------------------------------------'''
 '''---------------------------------MAIN------------------------------------'''
+'''-------------------------------------------------------------------------'''
+
 '''Handle command line arguments'''
-n = int(argv[1]) # LETS ASSUME THREE FIRST?
+n = int(argv[1]) # LETS ASSUME THREE FIRST? FOR TESTING
 m = int(argv[2])
 docs = getDocumentList()
 
-'''Preprocessing done here. TODO: Make a method'''
+'''Preprocessing done here'''
 allSentences = []
 for _ in docs:
     toAdd = []
@@ -79,14 +102,17 @@ for _ in docs:
     toAdd = re.sub('\)|\(', "" , toAdd) # Destroy all parenthesis
     toAdd = re.sub('\\n|\\ufeff', ' ', toAdd) # Destroy these weird tokens
     toAdd = re.split(r'([!|?|.])', toAdd)
+    
     x = 0
     while x < len(toAdd)-1:
         precursor = "<> "
-        string = toAdd[x] + " " + toAdd[(x+1)]
+        # Combines this sentence @ x with the one after it, which is sentence x's punctuation
+        string = toAdd[x] + " " + toAdd[(x+1)] 
+        #Insert N-1 Starting Cursors, dubbed "<>" , and spacing, in front of sentence beginnings
         for N in range(1,n):
             string = precursor + string
         allSentences.append(string)
-        x+=2
+        x+=2 # skip by 2 (sentence + punctuation)+
     
 ''' Turn dictionary of strings into dictionary of dictionaries (nested dict being
     tokenized sentences to include their punctutation'''
@@ -99,11 +125,9 @@ for _ in allSentences:
 ''' Dictionaries everywhere! unigrams for special case when n=1'''        
 ngrams = dict()
 nMinusOneGrams = dict()
-unigrams = dict()
 
 ''' For a single sentence in a dictionary of tokenized sentences'''
 for A in tokenizedSentences:
-    getUnigrams(A) # Unigram Case
     ''' For a token in a tokenized sentence'''
     for B in range(0,len(A)):
         ''' On the condition that it is not the added start symbols'''
@@ -129,21 +153,50 @@ for A in tokenizedSentences:
                 else:
                     ngrams[xCol][A[start]] +=1
 
-ngramsByPercent = ngrams
+''' Generate a new storage (maybe unneeded) of the words plus their respective weights'''
 ngramsByPercent = convert(ngrams, nMinusOneGrams)
-temp = ngramsByPercent['<> <>']
-probs = list(temp.values())
-words = list(temp.keys())
-print(words)
-print(sum(probs))
-print(np.random.choice(words,1,p=probs))    
+''' Generate the "start string" bit for all potential starts, robust to catch all values'''
+startBrackets = ""
+for number in range(0,n-1):
+    startBrackets = startBrackets + '<> '
+startBrackets = startBrackets[:-1] # Trim that last space
+sentenceStarts = ngramsByPercent[str(startBrackets)] #str unneeded probably
 
+''' Create 1D lists of pairwise values for each word and it's probability'''
+probs = list(sentenceStarts.values())
+words = list(sentenceStarts.keys())
 
-
+    
+outputSentences = []
+sentencesToGo = m
+while sentencesToGo > 0:
+    ''' np.random.choice is critical. words and probs must be equal, 1D, and match perfectly, and sum to 1(probs)'''
+    start = np.random.choice(words,1,p=probs) # Get the start of the sentence!
+    forming = startBrackets +" "+ start[0] # choice always returns a set, so set[0] for 1 item
+    currentNGram = N_Tokens(forming,n) # current N-1 gram to look up next words with
+    
+    ''' While no sentence end has been identified (by specified regex)'''
+    while(re.search(r'([!|?|.])', forming) is None):
+        forming = forming + " " # Add space on condition that not end of sentence
+        ''' In double dictionary, get dictionary where first key is the currentNGram'''
+        specifiedDictionary = ngramsByPercent[str(currentNGram)] 
+        # From this specified dictionary, create a 1D list of it's keys and it's values 1:1 matching
+        newProbs = list(specifiedDictionary.values())
+        newWords = list(specifiedDictionary.keys())
         
-           
-    
+        addition = np.random.choice(newWords,1,p=newProbs) # Word to be added
+        forming = forming + addition[0]
+        
+        currentNGram = N_Tokens(forming,n) # Word has been added. Get next N-1Gram
+    ''' Outside the while loop should be when the while loop identified an end punctuation'''    
+    outputSentences.append(forming)
+    sentencesToGo-=1 # Decrement number of sentences left to make
 
-    
 
-
+''' Outputting the sentences here'''
+counter = 1
+print("\n\n\n")
+for _ in outputSentences:
+    print("<<SENTENCE " +str(counter)+">>")
+    print(formatted(_)+"\n")
+    counter+=1
